@@ -38,7 +38,7 @@ export const DeleteProjectDialog = ({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { setConfirmText(""); setOpen(true); }}
         className="inline-flex items-center gap-2 rounded-md border border-danger/30 bg-danger/10 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/20"
       >
         <Trash2 size={16} />

@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import {
@@ -44,20 +46,28 @@ export const createProject = async (
     return { fieldErrors: { key: ["このキーは既に使用されています"] } };
   }
 
-  const project = await prisma.project.create({
-    data: {
-      name: parsed.data.name,
-      description: parsed.data.description,
-      key: parsed.data.key,
-      ownerId: session.user.id,
-      members: {
-        create: {
-          userId: session.user.id,
-          role: "OWNER",
+  let project;
+  try {
+    project = await prisma.project.create({
+      data: {
+        name: parsed.data.name,
+        description: parsed.data.description,
+        key: parsed.data.key,
+        ownerId: session.user.id,
+        members: {
+          create: {
+            userId: session.user.id,
+            role: "OWNER",
+          },
         },
       },
-    },
-  });
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { fieldErrors: { key: ["このキーは既に使用されています"] } };
+    }
+    throw e;
+  }
 
   revalidatePath("/projects");
   redirect(`/projects/${project.id}/board`);
@@ -103,14 +113,21 @@ export const updateProject = async (
     }
   }
 
-  await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      ...(parsed.data.name && { name: parsed.data.name }),
-      description: parsed.data.description ?? null,
-      ...(parsed.data.key && { key: parsed.data.key }),
-    },
-  });
+  try {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...(parsed.data.name && { name: parsed.data.name }),
+        description: parsed.data.description ?? null,
+        ...(parsed.data.key && { key: parsed.data.key }),
+      },
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { fieldErrors: { key: ["このキーは既に使用されています"] } };
+    }
+    throw e;
+  }
 
   revalidatePath(`/projects/${projectId}/settings`);
   revalidatePath("/projects");
