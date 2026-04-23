@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { Prisma } from "@prisma/client";
-
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -10,6 +8,7 @@ import {
   listProjectsQuerySchema,
 } from "@/lib/validations/project";
 
+import type { Prisma } from "@prisma/client";
 import type { NextRequest } from "next/server";
 
 export const GET = async (request: NextRequest) => {
