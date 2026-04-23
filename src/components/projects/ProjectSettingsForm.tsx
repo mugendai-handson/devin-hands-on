@@ -92,6 +92,9 @@ export const ProjectSettingsForm = ({
           required
           defaultValue={defaultValues.key}
           maxLength={5}
+          onChange={(e) => {
+            e.target.value = e.target.value.toUpperCase();
+          }}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="text-xs text-muted-foreground">

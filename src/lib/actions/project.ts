@@ -25,10 +25,11 @@ export const createProject = async (
     return { error: "認証が必要です" };
   }
 
+  const rawKey = formData.get("key");
   const raw = {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
-    key: formData.get("key"),
+    key: typeof rawKey === "string" ? rawKey.toUpperCase() : rawKey,
   };
 
   const parsed = createProjectSchema.safeParse(raw);
@@ -81,10 +82,11 @@ export const updateProject = async (
     return { error: "プロジェクトを編集する権限がありません" };
   }
 
+  const rawKey = formData.get("key");
   const raw = {
     name: formData.get("name") || undefined,
     description: formData.get("description") || undefined,
-    key: formData.get("key") || undefined,
+    key: typeof rawKey === "string" && rawKey ? rawKey.toUpperCase() : undefined,
   };
 
   const parsed = updateProjectSchema.safeParse(raw);
