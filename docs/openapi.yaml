@@ -1,0 +1,2109 @@
+openapi: 3.1.0
+info:
+  title: Devin Task Board API
+  version: 0.1.0
+  description: |
+    devin-task-board (Jira ミニ版) の REST API 仕様。
+
+    - 認証: Auth.js v5 の Credentials Provider によるセッション Cookie
+    - レスポンス形式: 成功 `{ data: T }` / 一覧 `{ data: T[], pagination }` / エラー `{ error: { code, message } }`
+    - バリデーション: 全 API で zod を使用 (`src/lib/validations/`)
+    - 仕様の正は本ファイル。実装はこれに準拠する。
+  contact:
+    name: devin-task-board
+    url: https://github.com/mugendai-handson/devin-hands-on
+  license:
+    name: UNLICENSED
+
+servers:
+  - url: http://localhost:3000
+    description: ローカル開発環境
+  - url: https://example.com
+    description: 本番環境 (placeholder)
+
+tags:
+  - name: Auth
+    description: 認証 (サインアップ・パスワードリセット)。ログイン/ログアウトは Auth.js が提供する `/api/auth/*` を使用。
+  - name: Projects
+    description: プロジェクト CRUD
+  - name: ProjectMembers
+    description: プロジェクトメンバー管理
+  - name: Tasks
+    description: タスク CRUD・ステータス変更・並び順変更・サブタスク
+  - name: Comments
+    description: タスクコメント
+  - name: Categories
+    description: プロジェクト内カテゴリ/ラベル
+  - name: Attachments
+    description: タスクへのファイル添付
+  - name: Search
+    description: グローバル検索
+  - name: Activities
+    description: アクティビティログ
+  - name: Notifications
+    description: 通知
+  - name: Dashboard
+    description: ダッシュボード集計
+  - name: Admin
+    description: 管理者専用 API
+  - name: Users
+    description: 自身のプロフィール
+
+security:
+  - sessionAuth: []
+
+paths:
+  # =======================
+  # Auth
+  # =======================
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      summary: サインアップ
+      description: |
+        新規ユーザーを作成する。`US-01`。
+        ログインは Auth.js が提供する `POST /api/auth/callback/credentials` を利用する。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupInput"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: パスワードリセット申請 / 実行
+      description: |
+        トークン未指定時はリセットメールを送信する (`US-03`)。
+        トークンと新パスワード指定時はパスワードを更新する。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/ResetPasswordRequestInput"
+                - $ref: "#/components/schemas/ResetPasswordConfirmInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =======================
+  # Projects
+  # =======================
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: プロジェクト一覧取得
+      description: ログインユーザーが所属するプロジェクト一覧 (`US-04`)。
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Projects]
+      summary: プロジェクト作成
+      description: プロジェクトを作成する (`US-05`)。プロジェクトキーは未指定時に自動生成される。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectInput"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+    get:
+      tags: [Projects]
+      summary: プロジェクト詳細取得
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Projects]
+      summary: プロジェクト更新
+      description: OWNER/ADMIN のみ。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Projects]
+      summary: プロジェクト削除
+      description: OWNER のみ削除可能。CASCADE で関連データも削除される。
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Project Members
+  # =======================
+  /api/projects/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+    get:
+      tags: [ProjectMembers]
+      summary: メンバー一覧
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMemberListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [ProjectMembers]
+      summary: メンバー招待
+      description: OWNER/ADMIN のみ。メールアドレスでユーザーを招待する。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMemberInput"
+      responses:
+        "201":
+          description: 招待完了
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMemberResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/projects/{id}/members/{memberId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+      - name: memberId
+        in: path
+        required: true
+        description: project_members.id
+        schema:
+          type: string
+          format: cuid
+    patch:
+      tags: [ProjectMembers]
+      summary: 権限変更
+      description: OWNER のみ。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberRoleInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMemberResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [ProjectMembers]
+      summary: メンバー削除
+      description: OWNER は自分自身を削除不可。
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Tasks
+  # =======================
+  /api/projects/{id}/tasks:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+    get:
+      tags: [Tasks]
+      summary: タスク一覧 (リストビュー用)
+      description: フィルタ・ソート・ページネーション可能 (`US-16`)。
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TaskStatus"
+        - name: priority
+          in: query
+          schema:
+            $ref: "#/components/schemas/TaskPriority"
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - name: dueFrom
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: dueTo
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, dueDate, priority, taskNumber]
+            default: createdAt
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Tasks]
+      summary: タスク作成
+      description: タスク番号は自動採番 (DTB-1, DTB-2 ...)。VIEWER は作成不可 (`US-09`)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskInput"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/tasks/{taskId}:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    get:
+      tags: [Tasks]
+      summary: タスク詳細取得
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Tasks]
+      summary: タスク更新
+      description: インライン編集対応。VIEWER は更新不可。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tasks]
+      summary: タスク削除
+      description: VIEWER は削除不可。CASCADE で関連データも削除される。
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/status:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    patch:
+      tags: [Tasks]
+      summary: ステータス変更 (D&D 用)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: "#/components/schemas/TaskStatus"
+                sortOrder:
+                  type: integer
+                  description: 移動先カラム内の順序 (省略時は末尾)
+                  minimum: 0
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/sort:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    patch:
+      tags: [Tasks]
+      summary: 並び順変更 (D&D 用)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sortOrder]
+              properties:
+                sortOrder:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/subtasks:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    get:
+      tags: [Tasks]
+      summary: サブタスク一覧
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Tasks]
+      summary: サブタスク作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubTaskInput"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Comments
+  # =======================
+  /api/tasks/{taskId}/comments:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    get:
+      tags: [Comments]
+      summary: コメント一覧
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Comments]
+      summary: コメント投稿
+      description: Markdown 対応。@メンションで通知トリガー (`US-19`)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentInput"
+      responses:
+        "201":
+          description: 投稿成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/comments/{commentId}:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: cuid
+    patch:
+      tags: [Comments]
+      summary: コメント編集
+      description: 本人のみ編集可能。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCommentInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Comments]
+      summary: コメント削除
+      description: 本人のみ削除可能。
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Categories
+  # =======================
+  /api/projects/{id}/categories:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+    get:
+      tags: [Categories]
+      summary: カテゴリ一覧
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Categories]
+      summary: カテゴリ作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryInput"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: cuid
+    patch:
+      tags: [Categories]
+      summary: カテゴリ更新
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Categories]
+      summary: カテゴリ削除
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Attachments
+  # =======================
+  /api/tasks/{taskId}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    post:
+      tags: [Attachments]
+      summary: ファイルアップロード
+      description: |
+        画像 (jpg/png/gif/webp)、PDF、テキスト、Office ファイルを許可。上限 10MB。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: アップロード成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: ファイルサイズ超過
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/attachments/{attachmentId}:
+    parameters:
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: cuid
+    delete:
+      tags: [Attachments]
+      summary: ファイル削除
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =======================
+  # Search
+  # =======================
+  /api/search:
+    get:
+      tags: [Search]
+      summary: グローバル検索
+      description: タスクタイトル・説明・番号・コメントを検索 (`US-22`)。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TaskStatus"
+        - name: priority
+          in: query
+          schema:
+            $ref: "#/components/schemas/TaskPriority"
+        - name: assigneeId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # =======================
+  # Activities
+  # =======================
+  /api/tasks/{taskId}/activities:
+    parameters:
+      - $ref: "#/components/parameters/TaskIdParam"
+    get:
+      tags: [Activities]
+      summary: タスクのアクティビティログ
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/projects/{id}/activities:
+    parameters:
+      - $ref: "#/components/parameters/ProjectIdParam"
+    get:
+      tags: [Activities]
+      summary: プロジェクトのアクティビティフィード
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # =======================
+  # Notifications
+  # =======================
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: 通知一覧
+      parameters:
+        - name: unread
+          in: query
+          description: true の場合は未読のみ
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/read:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: cuid
+    patch:
+      tags: [Notifications]
+      summary: 通知を既読にする
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: 全通知を一括既読
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: integer
+                        description: 既読化した件数
+                        minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # =======================
+  # Dashboard
+  # =======================
+  /api/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: ダッシュボードデータ取得
+      description: |
+        サマリー、ステータス別/優先度別集計、7日間完了推移、
+        自分にアサインされたタスク、期限が近いタスク、アクティビティを返す (`US-18`)。
+      parameters:
+        - name: projectId
+          in: query
+          description: プロジェクト指定 (省略時は全プロジェクト)
+          schema:
+            type: string
+            format: cuid
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # =======================
+  # Admin
+  # =======================
+  /api/admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: 監査ログ一覧
+      description: ADMIN ロールのみ (`US-29`)。
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: cuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # =======================
+  # Users
+  # =======================
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: 自分のプロフィール取得
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Users]
+      summary: プロフィール更新
+      description: 名前・アバター URL・言語・テーマを更新 (`US-30`)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileInput"
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: authjs.session-token
+      description: |
+        Auth.js v5 のセッション Cookie。クライアント側は自動付与される。
+        本番では `__Secure-authjs.session-token` (HTTPS) になる場合がある。
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: ページ番号 (1 始まり)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPageParam:
+      name: perPage
+      in: query
+      description: 1 ページあたり件数
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ProjectIdParam:
+      name: id
+      in: path
+      required: true
+      description: プロジェクト ID (cuid)
+      schema:
+        type: string
+        format: cuid
+    TaskIdParam:
+      name: taskId
+      in: path
+      required: true
+      description: タスク ID (cuid)
+      schema:
+        type: string
+        format: cuid
+
+  responses:
+    ValidationError:
+      description: 400 - バリデーションエラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            validation:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: タイトルは必須です
+    Unauthorized:
+      description: 401 - 未認証
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: 認証が必要です
+    Forbidden:
+      description: 403 - 権限不足
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: この操作を行う権限がありません
+    NotFound:
+      description: 404 - リソース未発見
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            notFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: 対象のリソースが見つかりません
+    Conflict:
+      description: 409 - 競合 (重複等)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            conflict:
+              value:
+                error:
+                  code: CONFLICT
+                  message: 既に登録されています
+    InternalError:
+      description: 500 - サーバーエラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            internal:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: サーバーエラーが発生しました
+
+  schemas:
+    # ---------- Common ----------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                エラーコード。代表値:
+                `VALIDATION_ERROR` / `UNAUTHORIZED` / `FORBIDDEN` /
+                `NOT_FOUND` / `CONFLICT` / `INTERNAL_ERROR`。
+              examples: [VALIDATION_ERROR]
+            message:
+              type: string
+              description: ユーザー向けメッセージ (日本語)
+              examples: [タイトルは必須です]
+    MessageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [message]
+          properties:
+            message:
+              type: string
+    Pagination:
+      type: object
+      required: [page, perPage, total, totalPages]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        perPage:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+
+    # ---------- Enums ----------
+    TaskStatus:
+      type: string
+      enum: [BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE]
+    TaskPriority:
+      type: string
+      enum: [URGENT, HIGH, MEDIUM, LOW, NONE]
+    UserRole:
+      type: string
+      enum: [ADMIN, MEMBER]
+    Theme:
+      type: string
+      enum: [LIGHT, DARK, SYSTEM]
+    Locale:
+      type: string
+      enum: [ja, en]
+    ProjectMemberRole:
+      type: string
+      enum: [OWNER, ADMIN, MEMBER, VIEWER]
+    ActivityAction:
+      type: string
+      enum:
+        - CREATED
+        - UPDATED
+        - DELETED
+        - STATUS_CHANGED
+        - ASSIGNED
+        - COMMENTED
+        - ATTACHED
+    NotificationType:
+      type: string
+      enum:
+        - TASK_ASSIGNED
+        - TASK_COMMENTED
+        - TASK_STATUS_CHANGED
+        - TASK_DUE_SOON
+        - MENTIONED
+
+    # ---------- Auth ----------
+    SignupInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: 表示名
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          description: 8 文字以上
+    ResetPasswordRequestInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordConfirmInput:
+      type: object
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          description: メールで送付されたリセットトークン (有効期限 1 時間)
+        password:
+          type: string
+          minLength: 8
+
+    # ---------- User ----------
+    User:
+      type: object
+      required: [id, email, name, role, locale, theme, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatarUrl:
+          type: [string, "null"]
+          format: uri
+        role:
+          $ref: "#/components/schemas/UserRole"
+        locale:
+          $ref: "#/components/schemas/Locale"
+        theme:
+          $ref: "#/components/schemas/Theme"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UserSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: cuid
+        name:
+          type: string
+        avatarUrl:
+          type: [string, "null"]
+          format: uri
+    UserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/User"
+    UpdateProfileInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        avatarUrl:
+          type: [string, "null"]
+          format: uri
+        locale:
+          $ref: "#/components/schemas/Locale"
+        theme:
+          $ref: "#/components/schemas/Theme"
+
+    # ---------- Project ----------
+    Project:
+      type: object
+      required: [id, name, key, ownerId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        key:
+          type: string
+          description: プロジェクトキー (例 DTB)
+        ownerId:
+          type: string
+          format: cuid
+        owner:
+          $ref: "#/components/schemas/UserSummary"
+        memberCount:
+          type: integer
+          minimum: 0
+        taskCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        key:
+          type: string
+          description: 省略時は name から自動生成
+          minLength: 2
+          maxLength: 8
+    UpdateProjectInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: [string, "null"]
+        key:
+          type: string
+          minLength: 2
+          maxLength: 8
+    ProjectResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Project"
+    ProjectListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- ProjectMember ----------
+    ProjectMember:
+      type: object
+      required: [id, projectId, userId, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        projectId:
+          type: string
+          format: cuid
+        userId:
+          type: string
+          format: cuid
+        role:
+          $ref: "#/components/schemas/ProjectMemberRole"
+        user:
+          $ref: "#/components/schemas/UserSummary"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    InviteMemberInput:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/ProjectMemberRole"
+    UpdateMemberRoleInput:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectMemberRole"
+    ProjectMemberResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProjectMember"
+    ProjectMemberListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+
+    # ---------- Task ----------
+    Task:
+      type: object
+      required:
+        - id
+        - taskNumber
+        - title
+        - status
+        - priority
+        - projectId
+        - reporterId
+        - sortOrder
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: cuid
+        taskNumber:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: [string, "null"]
+          description: Markdown 対応
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        projectId:
+          type: string
+          format: cuid
+        assigneeId:
+          type: [string, "null"]
+          format: cuid
+        reporterId:
+          type: string
+          format: cuid
+        parentTaskId:
+          type: [string, "null"]
+          format: cuid
+        dueDate:
+          type: [string, "null"]
+          format: date-time
+        startDate:
+          type: [string, "null"]
+          format: date-time
+        estimatedHours:
+          type: [number, "null"]
+          format: float
+          minimum: 0
+        actualHours:
+          type: [number, "null"]
+          format: float
+          minimum: 0
+        sortOrder:
+          type: integer
+          minimum: 0
+        assignee:
+          $ref: "#/components/schemas/UserSummary"
+        reporter:
+          $ref: "#/components/schemas/UserSummary"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TaskDetail:
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          properties:
+            subTasks:
+              type: array
+              items:
+                $ref: "#/components/schemas/Task"
+            comments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Comment"
+            attachments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Attachment"
+    CreateTaskInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        assigneeId:
+          type: [string, "null"]
+          format: cuid
+        dueDate:
+          type: [string, "null"]
+          format: date-time
+        startDate:
+          type: [string, "null"]
+          format: date-time
+        estimatedHours:
+          type: [number, "null"]
+          format: float
+          minimum: 0
+        categoryIds:
+          type: array
+          items:
+            type: string
+            format: cuid
+    UpdateTaskInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        assigneeId:
+          type: [string, "null"]
+          format: cuid
+        dueDate:
+          type: [string, "null"]
+          format: date-time
+        startDate:
+          type: [string, "null"]
+          format: date-time
+        estimatedHours:
+          type: [number, "null"]
+          format: float
+          minimum: 0
+        actualHours:
+          type: [number, "null"]
+          format: float
+          minimum: 0
+        categoryIds:
+          type: array
+          items:
+            type: string
+            format: cuid
+    CreateSubTaskInput:
+      allOf:
+        - $ref: "#/components/schemas/CreateTaskInput"
+    TaskResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Task"
+    TaskDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/TaskDetail"
+    TaskListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- Comment ----------
+    Comment:
+      type: object
+      required: [id, content, taskId, authorId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        content:
+          type: string
+          description: Markdown 対応
+        taskId:
+          type: string
+          format: cuid
+        authorId:
+          type: string
+          format: cuid
+        author:
+          $ref: "#/components/schemas/UserSummary"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateCommentInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+    UpdateCommentInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+    CommentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Comment"
+    CommentListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- Category ----------
+    Category:
+      type: object
+      required: [id, name, color, projectId]
+      properties:
+        id:
+          type: string
+          format: cuid
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+          description: OKLCH カラー値 (例 `oklch(0.7 0.18 27)`)
+        projectId:
+          type: string
+          format: cuid
+    CreateCategoryInput:
+      type: object
+      required: [name, color]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+    UpdateCategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+    CategoryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Category"
+    CategoryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+
+    # ---------- Attachment ----------
+    Attachment:
+      type: object
+      required:
+        - id
+        - fileName
+        - fileUrl
+        - fileSize
+        - mimeType
+        - taskId
+        - uploaderId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: cuid
+        fileName:
+          type: string
+        fileUrl:
+          type: string
+          format: uri
+        fileSize:
+          type: integer
+          minimum: 0
+          description: バイト数 (上限 10MB)
+        mimeType:
+          type: string
+        taskId:
+          type: string
+          format: cuid
+        uploaderId:
+          type: string
+          format: cuid
+        uploader:
+          $ref: "#/components/schemas/UserSummary"
+        createdAt:
+          type: string
+          format: date-time
+    AttachmentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Attachment"
+
+    # ---------- Activity ----------
+    ActivityLog:
+      type: object
+      required:
+        - id
+        - action
+        - entityType
+        - entityId
+        - userId
+        - projectId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: cuid
+        action:
+          $ref: "#/components/schemas/ActivityAction"
+        entityType:
+          type: string
+          description: task, comment, project など
+        entityId:
+          type: string
+          format: cuid
+        userId:
+          type: string
+          format: cuid
+        user:
+          $ref: "#/components/schemas/UserSummary"
+        projectId:
+          type: string
+          format: cuid
+        oldValue:
+          description: 変更前の値 (任意の JSON / null)
+        newValue:
+          description: 変更後の値 (任意の JSON / null)
+        createdAt:
+          type: string
+          format: date-time
+    ActivityListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityLog"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- Notification ----------
+    Notification:
+      type: object
+      required: [id, type, title, message, isRead, userId, createdAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        title:
+          type: string
+        message:
+          type: string
+        isRead:
+          type: boolean
+        userId:
+          type: string
+          format: cuid
+        linkUrl:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+    NotificationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Notification"
+    NotificationListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+        unreadCount:
+          type: integer
+          minimum: 0
+
+    # ---------- Audit ----------
+    AuditLog:
+      type: object
+      required: [id, action, userId, resource, resourceId, createdAt]
+      properties:
+        id:
+          type: string
+          format: cuid
+        action:
+          type: string
+        userId:
+          type: string
+          format: cuid
+        user:
+          $ref: "#/components/schemas/UserSummary"
+        ipAddress:
+          type: [string, "null"]
+        userAgent:
+          type: [string, "null"]
+        resource:
+          type: string
+        resourceId:
+          type: string
+        details:
+          description: 任意の詳細情報 (JSON / null)
+        createdAt:
+          type: string
+          format: date-time
+    AuditLogListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- Search ----------
+    SearchResultItem:
+      type: object
+      required: [type, id, title]
+      properties:
+        type:
+          type: string
+          enum: [task, comment]
+        id:
+          type: string
+          format: cuid
+        title:
+          type: string
+          description: タスクタイトル / コメント抜粋
+        snippet:
+          type: string
+          description: ハイライト用抜粋
+        taskId:
+          type: string
+          format: cuid
+        projectId:
+          type: string
+          format: cuid
+    SearchResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResultItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    # ---------- Dashboard ----------
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        count:
+          type: integer
+          minimum: 0
+    PriorityCount:
+      type: object
+      required: [priority, count]
+      properties:
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        count:
+          type: integer
+          minimum: 0
+    DailyCompletion:
+      type: object
+      required: [date, count]
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+          minimum: 0
+    DashboardResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required:
+            - summary
+            - statusBreakdown
+            - priorityBreakdown
+            - completionTrend
+            - assignedTasks
+            - dueSoonTasks
+            - activities
+          properties:
+            summary:
+              type: object
+              required: [total, done, inProgress, overdue]
+              properties:
+                total:
+                  type: integer
+                  minimum: 0
+                done:
+                  type: integer
+                  minimum: 0
+                inProgress:
+                  type: integer
+                  minimum: 0
+                overdue:
+                  type: integer
+                  minimum: 0
+            statusBreakdown:
+              type: array
+              items:
+                $ref: "#/components/schemas/StatusCount"
+            priorityBreakdown:
+              type: array
+              items:
+                $ref: "#/components/schemas/PriorityCount"
+            completionTrend:
+              type: array
+              description: 過去 7 日間
+              items:
+                $ref: "#/components/schemas/DailyCompletion"
+            assignedTasks:
+              type: array
+              maxItems: 5
+              items:
+                $ref: "#/components/schemas/Task"
+            dueSoonTasks:
+              type: array
+              maxItems: 5
+              items:
+                $ref: "#/components/schemas/Task"
+            activities:
+              type: array
+              maxItems: 10
+              items:
+                $ref: "#/components/schemas/ActivityLog"
