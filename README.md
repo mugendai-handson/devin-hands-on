@@ -2,6 +2,10 @@
 
 タスク管理アプリ
 
+## ドキュメント
+
+- [OpenAPI 仕様（API リファレンス）](docs/openapi.yaml)
+
 ## 技術スタック
 
 - **フレームワーク**: Next.js 16 (App Router) + React 19 + TypeScript
