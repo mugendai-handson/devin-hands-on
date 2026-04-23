@@ -22,9 +22,14 @@ export const DeleteProjectDialog = ({
 
   const handleDelete = async () => {
     setIsDeleting(true);
-    const result = await deleteProject(projectId);
-    if (result?.error) {
-      toast.error(result.error);
+    try {
+      const result = await deleteProject(projectId);
+      if (result?.error) {
+        toast.error(result.error);
+        setIsDeleting(false);
+      }
+    } catch {
+      toast.error("プロジェクトの削除に失敗しました");
       setIsDeleting(false);
     }
   };
