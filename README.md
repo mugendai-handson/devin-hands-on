@@ -9,6 +9,10 @@
 - **スタイル**: Tailwind CSS v4
 - **インフラ**: Docker Compose
 
+## ドキュメント
+
+- [ER図（Mermaid）](docs/erd.md)
+
 ## セットアップ
 
 ### 前提条件
