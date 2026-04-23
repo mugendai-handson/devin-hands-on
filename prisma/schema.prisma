@@ -36,7 +36,7 @@ model Project {
   id          String   @id @default(cuid())
   name        String
   description String?
-  key         String
+  key         String   @unique
   ownerId     String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
