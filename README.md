@@ -14,6 +14,7 @@
 - [ER図（データベース設計）](docs/erd.md)
 - [機能仕様書](docs/spec.md)
 - [ユーザーストーリー](docs/user-stories.md)
+- [OpenAPI 3.1 仕様書](docs/openapi.yaml)
 
 ## セットアップ
 
