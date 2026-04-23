@@ -2,6 +2,10 @@
 
 タスク管理アプリ
 
+## ドキュメント
+
+- [ERD図（Entity Relationship Diagram）](docs/erd.md)
+
 ## 技術スタック
 
 - **フレームワーク**: Next.js 16 (App Router) + React 19 + TypeScript
